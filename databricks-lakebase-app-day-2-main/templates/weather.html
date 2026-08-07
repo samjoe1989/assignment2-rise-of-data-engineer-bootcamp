@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Data Harvester</title>
+  <style>
+    :root {
+      --bg: #f4f6fb; --card-bg: #ffffff; --border: #e4e7ee; --text: #1f2430;
+      --muted: #6b7280; --accent: #4f46e5; --accent-hover: #4338ca;
+      --success: #10b981; --danger: #ef4444; --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      max-width: 800px; margin: 0 auto; padding: 32px 20px;
+      color: var(--text); background: var(--bg);
+    }
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+    .card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+    }
+    label { display: block; font-weight: 600; font-size: 14px; color: var(--text); margin-bottom: 8px; }
+    input[type="text"] {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+      border-radius: 8px; font-size: 14px; transition: border-color 0.15s ease;
+    }
+    input[type="text"]:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+    button {
+      margin-top: 16px; padding: 12px 20px; cursor: pointer; border: none;
+      border-radius: 8px; background: var(--accent); color: #fff;
+      font-size: 14px; font-weight: 600; transition: background 0.15s ease;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #status, #search-status { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 14px; display: none; }
+    #status.show, #search-status.show { display: block; }
+    #status.loading, #search-status.loading { background: #e0e7ff; color: #4338ca; }
+    #status.success, #search-status.success { background: #d1fae5; color: #065f46; }
+    #status.error, #search-status.error { background: #fee2e2; color: #991b1b; }
+    .weather-container { margin-top: 8px; }
+    .weather-item {
+      background: #fafbfc; border-left: 4px solid var(--accent);
+      padding: 16px; margin-bottom: 16px; border-radius: 6px;
+    }
+    .weather-item.alert { border-left-color: var(--danger); background: #fef2f2; }
+    .weather-item.forecast { border-left-color: var(--success); background: #f0fdf4; }
+    .weather-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
+    .weather-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .weather-meta { font-size: 12px; color: var(--muted); }
+    .weather-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 4px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; flex-shrink: 0;
+    }
+    .badge-alert { background: var(--danger); color: white; }
+    .badge-forecast { background: var(--success); color: white; }
+    .weather-location { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .weather-content { font-size: 14px; line-height: 1.6; color: var(--text); }
+    .empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .filter-info {
+      background: #f0f9ff;
+      border: 1px solid #bfdbfe;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: #1e40af;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌤️ Weather Data Harvester</h1>
+  <p class="hint">Enter one or more locations to sync weather alerts and forecasts from the National Weather Service. Data is stored in your Lakebase database.</p>
+  
+  <div class="card">
+    <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">🔍 Semantic Search</h2>
+    <p class="hint" style="margin-bottom: 16px;">Search weather narratives using natural language. Powered by vector embeddings and cosine similarity.</p>
+    <form id="search-form">
+      <label for="search-query">Search Query</label>
+      <input type="text" id="search-query" name="query" placeholder="e.g., severe thunderstorm warnings, flood risks, extreme heat" required>
+      <button type="submit" id="search-btn">Search</button>
+    </form>
+    <div id="search-status"></div>
+  </div>
+  <div id="search-results"></div>
+  <div class="card">
+    <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">📥 Fetch Weather Data</h2>
+    <form id="weather-form">
+      <label for="locations">Locations (comma-separated)</label>
+      <input type="text" id="locations" name="locations" placeholder="Chicago, IL, Austin, TX, Seattle, WA" required>
+      <label for="source-type" style="margin-top: 16px;">Filter by Source Type</label>
+      <select id="source-type" name="source_type" style="width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: white;">
+        <option value="">All Types</option>
+        <option value="alerts">Alerts Only</option>
+        <option value="forecast">Forecasts Only</option>
+        <option value="hourly_forecast">Hourly Forecasts Only</option>
+      </select>
+      <button type="submit" id="submit-btn">Fetch Weather Data</button>
+    </form>
+    <div id="status"></div>
+  </div>
+  <div id="weather-results"></div>
+  <script>
+    const form=document.getElementById('weather-form'),statusEl=document.getElementById('status'),resultsEl=document.getElementById('weather-results'),submitBtn=document.getElementById('submit-btn'),locationsInput=document.getElementById('locations'),sourceTypeSelect=document.getElementById('source-type');
+    const searchForm=document.getElementById('search-form'),searchStatusEl=document.getElementById('search-status'),searchResultsEl=document.getElementById('search-results'),searchBtn=document.getElementById('search-btn'),searchQueryInput=document.getElementById('search-query');
+    
+    let currentFilterLocations = [];
+    let currentSourceType = '';
+    
+    function showStatus(a,b){statusEl.textContent=a,statusEl.className=`show ${b}`}
+    
+    function formatDate(a){if(!a)return'N/A';const b=new Date(a);return b.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}
+    
+    function renderWeatherData(data, filterLocations){
+      if(!data||0===data.length){
+        let msg = 'No weather data found.';
+        if (filterLocations && filterLocations.length > 0) {
+          msg = `No weather data found for: ${filterLocations.join(', ')}. Try fetching data for different locations below.`;
+        } else {
+          msg = 'Enter locations below to fetch and view weather data.';
+        }
+        resultsEl.innerHTML=`<div class="card empty-state"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg><p>${msg}</p></div>`;
+        return;
+      }
+      
+      let filterInfoHtml = '';
+      if (filterLocations && filterLocations.length > 0) {
+        filterInfoHtml = `<div class="filter-info">📍 Showing results for: <strong>${filterLocations.join(', ')}</strong></div>`;
+      }
+      
+      const html=data.map(a=>{
+        const isAlert='alerts'===a.source_type;
+        const badge=isAlert?'<span class="weather-badge badge-alert">⚠️ Alert</span>':'<span class="weather-badge badge-forecast">📊 Forecast</span>';
+        return`<div class="weather-item ${isAlert?'alert':'forecast'}"><div class="weather-header"><div><div class="weather-title">${a.headline||'Weather Update'}</div><div class="weather-location">📍 ${a.location||'Unknown location'}</div></div>${badge}</div><div class="weather-content">${a.narrative_text||'No additional details available.'}</div><div class="weather-meta" style="margin-top: 12px;">Issued: ${formatDate(a.issued_at)} • Synced: ${formatDate(a.synced_at)}</div></div>`
+      }).join('');
+      
+      resultsEl.innerHTML=filterInfoHtml+`<div class="weather-container">${html}</div>`;
+    }
+    
+    async function loadWeatherData(filterLocations, sourceType){
+      try{
+        let url = '/weather/data?limit=50';
+        if (filterLocations && filterLocations.length > 0) {
+          url += '&locations=' + encodeURIComponent(filterLocations.join(','));
+        }
+        if (sourceType) {
+          url += '&source_type=' + encodeURIComponent(sourceType);
+        }
+        const resp=await fetch(url);
+        const result=await resp.json();
+        if(resp.ok){
+          renderWeatherData(result.data, filterLocations, sourceType);
+        }else{
+          showStatus('Error loading weather data: '+(result.error||resp.statusText),'error');
+        }
+      }catch(err){
+        showStatus('Failed to load weather data: '+err.message,'error');
+      }
+    }
+    
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const locationsStr=locationsInput.value.trim();
+      if(!locationsStr)return;
+      
+      const locations=locationsStr.split(',').map(loc=>loc.trim()).filter(Boolean);
+      if(0===locations.length){
+        showStatus('Please enter at least one location','error');
+        return;
+      }
+      
+      submitBtn.disabled=!0;
+      showStatus(`Fetching weather data for ${locations.length} location(s)...`,'loading');
+      
+      try{
+        const resp=await fetch('/weather/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({locations})});
+        const result=await resp.json();
+        
+        if(resp.ok){
+          showStatus(`✓ Successfully synced ${result.synced} weather document(s) for: ${result.locations.join(', ')}`,'success');
+          currentFilterLocations = result.locations;
+          currentSourceType = sourceTypeSelect.value;
+          await loadWeatherData(currentFilterLocations, currentSourceType);
+          submitBtn.disabled=!1;
+        }else{
+          showStatus('Error: '+(result.error||resp.statusText),'error');
+          submitBtn.disabled=!1;
+        }
+      }catch(err){
+        showStatus('Request failed: '+err.message,'error');
+        submitBtn.disabled=!1;
+      }
+    });
+    
+    // Semantic search handler
+    searchForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const queryText = searchQueryInput.value.trim();
+      if (!queryText) return;
+      
+      searchBtn.disabled = true;
+      searchStatusEl.textContent = 'Searching...';
+      searchStatusEl.className = 'show loading';
+      
+      try {
+        const resp = await fetch('/weather/search', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({query: queryText, limit: 10})
+        });
+        const result = await resp.json();
+        
+        if (resp.ok) {
+          searchStatusEl.textContent = `✓ Found ${result.count} result(s)`;
+          searchStatusEl.className = 'show success';
+          renderSearchResults(result.results, queryText);
+          searchBtn.disabled = false;
+        } else {
+          searchStatusEl.textContent = 'Error: ' + (result.error || resp.statusText);
+          searchStatusEl.className = 'show error';
+          searchBtn.disabled = false;
+        }
+      } catch (err) {
+        searchStatusEl.textContent = 'Search failed: ' + err.message;
+        searchStatusEl.className = 'show error';
+        searchBtn.disabled = false;
+      }
+    });
+    
+    function renderSearchResults(results, query) {
+      if (!results || results.length === 0) {
+        searchResultsEl.innerHTML = '<div class="card empty-state"><p>No results found for "' + query + '"</p></div>';
+        return;
+      }
+      
+      const html = results.map(r => {
+        const isAlert = r.source_type === 'alerts';
+        const badge = isAlert ? '<span class="weather-badge badge-alert">⚠️ Alert</span>' : '<span class="weather-badge badge-forecast">📊 Forecast</span>';
+        const similarity = ((1 - r.distance) * 100).toFixed(1);
+        return `<div class="weather-item ${isAlert ? 'alert' : 'forecast'}">
+          <div class="weather-header">
+            <div>
+              <div class="weather-title">${r.headline || 'Weather Update'}</div>
+              <div class="weather-location">📍 ${r.location || 'Unknown'} • ${similarity}% match</div>
+            </div>
+            ${badge}
+          </div>
+          <div class="weather-content">${r.chunk_text || r.narrative_text || 'No details available.'}</div>
+          <div class="weather-meta" style="margin-top: 12px;">Issued: ${formatDate(r.issued_at)} • Model: ${r.model_name || 'unknown'}</div>
+        </div>`;
+      }).join('');
+      
+      searchResultsEl.innerHTML = '<div class="card"><h3 style="font-size: 18px; margin-bottom: 16px;">Search Results for "' + query + '"</h3></div>' + html;
+    }
+    
+    // Don't load any data initially - only show results after user searches
+  </script>
+</body>
+</html>

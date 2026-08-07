@@ -5,27 +5,22 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create the embeddings table
--- IMPORTANT: Replace {{EMBEDDING_DIM}} below with the correct dimension for your model:
---   - sentence-transformers/all-MiniLM-L6-v2: 384
---   - sentence-transformers/all-mpnet-base-v2: 768
---   - BAAI/bge-small-en-v1.5: 384
---   - BAAI/bge-base-en-v1.5: 768
---   - BAAI/bge-large-en-v1.5: 1024
-CREATE TABLE IF NOT EXISTS ticker_news_embeddings (
-    id TEXT PRIMARY KEY,
-    ticker TEXT NOT NULL,
-    title TEXT NOT NULL,
-    published_utc TIMESTAMPTZ,
-    embedding VECTOR({{EMBEDDING_DIM}}) NOT NULL,
+CREATE TABLE IF NOT EXISTS weather_documents_embeddings (
+    id TEXT PRIMARY KEY,  -- format: {weather_doc_id}_{chunk_index}
+    weather_document_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    embedding VECTOR(384) NOT NULL,
     model_name TEXT NOT NULL,
-    embedded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    embedded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    FOREIGN KEY (weather_document_id) REFERENCES weather_documents(id),
+    UNIQUE (weather_document_id, chunk_index)
 );
 
--- Create HNSW index for fast cosine similarity search
-CREATE INDEX IF NOT EXISTS idx_ticker_news_embeddings_embedding
-ON ticker_news_embeddings
-USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_weather_embeddings_document_id 
+    ON weather_documents_embeddings(weather_document_id);
+CREATE INDEX IF NOT EXISTS idx_weather_embeddings_embedding 
+    ON weather_documents_embeddings USING ivfflat (embedding vector_cosine_ops);
 
 -- Verify the table was created
 SELECT 
@@ -34,5 +29,5 @@ SELECT
     data_type,
     udt_name
 FROM information_schema.columns
-WHERE table_name = 'ticker_news_embeddings'
+WHERE table_name = 'weather_documents_embeddings'
 ORDER BY ordinal_position;
